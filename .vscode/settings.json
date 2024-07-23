@@ -1,0 +1,11 @@
+{
+	"[rust]": {
+		"editor.defaultFormatter": "rust-lang.rust-analyzer",
+		"editor.formatOnSave": true,
+		"editor.formatOnSaveMode": "file"
+	},
+	"lldb.displayFormat": "auto",
+	"lldb.showDisassembly": "auto",
+	"lldb.dereferencePointers": true,
+	"lldb.consoleMode": "commands"
+}
