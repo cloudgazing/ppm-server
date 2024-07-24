@@ -5,34 +5,12 @@ use jwt_compact::{
 	alg::{Hs256, Hs256Key},
 	prelude::*,
 };
-use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-#[derive(Serialize, Deserialize)]
-struct TokenClaims {
-	user_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct LoginData {
-	access_key: String,
-	password: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct MessageData {
-	access_token: String,
-    // change to ecnrypted message
-	message: String,
-}
-
-#[derive(Serialize, Deserialize)]
-enum WSData {
-	LoginData(LoginData),
-	MessageData(MessageData),
-}
+mod models;
+use models::{ClientMessage, TokenClaims};
 
 fn generate_jwt(key: &Hs256Key, user_id: String) -> Result<String, jwt_compact::CreationError> {
 	let custom_claims = TokenClaims { user_id };
@@ -73,13 +51,13 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
 	while let Some(message) = ws_receiver.next().await {
 		match message {
 			Ok(Message::Text(text)) => {
-				match serde_json::from_str::<WSData>(&text) {
-					Ok(WSData::LoginData(login_data)) => {
+				match serde_json::from_str::<ClientMessage>(&text) {
+					Ok(ClientMessage::LoginData(data)) => {
 						// validate login data
-						println!("Received login data: {:?}", login_data);
+						println!("Received login data: {:?}", data);
 
 						// get user_id
-                        let user_id = "test-user-id".to_string();
+						let user_id = "test-user-id".to_string();
 
 						let key = Hs256Key::new(b"super_secret_key_donut_steel");
 
@@ -101,9 +79,9 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
 							}
 						}
 					}
-					Ok(WSData::MessageData(message_data)) => {
+					Ok(ClientMessage::SentMessage(data)) => {
 						let key = Hs256Key::new(b"super_secret_key_donut_steel");
-						let token = get_jwt(message_data.access_token, &key);
+						let token = get_jwt(data.access_token, &key);
 
 						match token {
 							Ok(token) => {
@@ -112,7 +90,7 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
 							}
 							Err(e) => {
 								// send something that prompts the user to back in
-								println!("Error: {e}"); 
+								println!("Invalid token: {e}");
 							}
 						}
 					}
