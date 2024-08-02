@@ -9,8 +9,8 @@ use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-mod models;
-use models::{ClientMessage, LoginConfirmation, ServerMessage, TokenClaims};
+use ppm_models::client::{ClientMessage, LoginData, SignupData};
+use ppm_models::server::{LoginConfirmation, SignupConfirmation, TokenClaims};
 
 fn generate_jwt(key: &Hs256Key, user_id: String) -> Result<String, jwt_compact::CreationError> {
 	use jwt_compact::{alg::Hs256, AlgorithmExt, Claims, Header, TimeOptions};
@@ -71,66 +71,7 @@ async fn handle_connection(stream: TlsStream<TcpStream>) {
 				};
 
 				match client_message {
-					ClientMessage::LoginData(_data) => {
-						//TODO: validate login data
-
-						//TODO: get user_id from db
-						let user_id = "test-user-id".to_string();
-
-						let key = Hs256Key::new(b"super_secret_key_donut_steel");
-
-						let token_string = generate_jwt(&key, user_id);
-
-						match token_string {
-							Ok(access_token) => {
-								let login_confirmation = LoginConfirmation { access_token };
-
-								let server_message = ServerMessage::LoginConfirmation(login_confirmation);
-
-								let message_string = serde_json::to_string(&server_message).unwrap();
-
-								sender
-									.send(Message::Text(message_string))
-									.await
-									.expect("Failed to send auth token");
-							}
-							Err(e) => {
-								println!("Error: {e}");
-								sender
-									.send(Message::Text("There was an error loging you in".to_string()))
-									.await
-									.expect("Failed to send login error");
-							}
-						}
-					}
-					ClientMessage::SignupData(data) => {
-						// validate signup data
-						println!("Received signup data: {:?}", data);
-
-						// get user_id
-						let user_id = "test-user-id".to_string();
-
-						let key = Hs256Key::new(b"super_secret_key_donut_steel");
-
-						let token_string = generate_jwt(&key, user_id);
-
-						match token_string {
-							Ok(token_string) => {
-								sender
-									.send(Message::Text(token_string))
-									.await
-									.expect("Failed to send auth token");
-							}
-							Err(e) => {
-								println!("Error: {e}");
-								sender
-									.send(Message::Text("There was an error signing up".to_string()))
-									.await
-									.expect("Failed to send signup error");
-							}
-						}
-					}
-					ClientMessage::SentMessage(data) => {
+					ClientMessage::UserMessage(data) => {
 						let key = Hs256Key::new(b"super_secret_key_donut_steel");
 						let token = get_jwt(data.access_token, &key);
 
@@ -145,12 +86,64 @@ async fn handle_connection(stream: TlsStream<TcpStream>) {
 							}
 						}
 					}
+					ClientMessage::WelcomeValidation(data) => {
+						println!("welcome: {:#?}", data);
+					}
 				}
 			}
 			Message::Close(_) => {
 				println!("Client disconnected");
 			}
 			_ => (),
+		}
+	}
+}
+
+fn login(login_data: LoginData) {
+	//TODO: validate login data
+
+	//TODO: get user_id from db
+	let user_id = "test-user-id".to_string();
+
+	let key = Hs256Key::new(b"super_secret_key_donut_steel");
+
+	let token = generate_jwt(&key, user_id);
+
+	match token {
+		Ok(access_token) => {
+			let login_confirmation = LoginConfirmation { access_token };
+
+			let data_string = serde_json::to_string(&login_confirmation).unwrap();
+
+			// send the login confirmation
+		}
+		Err(e) => {
+			// send back an error
+		}
+	}
+}
+
+fn signup(signup_data: SignupData) {
+	// validate signup data
+	println!("Received signup data: {:?}", signup_data);
+
+	// get user_id
+	let user_id = "test-user-id".to_string();
+
+	let key = Hs256Key::new(b"super_secret_key_donut_steel");
+
+	let token = generate_jwt(&key, user_id);
+
+	match token {
+		Ok(access_token) => {
+			let signup_confirmation = SignupConfirmation { access_token };
+
+			let data_string = serde_json::to_string(&signup_confirmation).unwrap();
+
+			// send the signup confirmation
+		}
+		Err(e) => {
+			// send back an error
 		}
 	}
 }

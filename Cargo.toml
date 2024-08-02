@@ -15,3 +15,5 @@ serde_json = "1.0.120"
 tokio = {version = "1.38.1", features = ["full"]}
 tokio-rustls = "0.26.0"
 tokio-tungstenite = "0.23.1"
+
+ppm-models ={ path = "./models"}
