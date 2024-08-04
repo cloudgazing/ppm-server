@@ -1,4 +1,3 @@
-use futures_util::sink::SinkExt;
 use futures_util::stream::StreamExt;
 use jwt_compact::alg::Hs256Key;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -9,8 +8,29 @@ use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-use ppm_models::client::{ClientMessage, LoginData, SignupData};
+use ppm_models::client::{AuthData, ClientMessage};
 use ppm_models::server::{LoginConfirmation, SignupConfirmation, TokenClaims};
+
+async fn get_acceptor() -> Result<TlsAcceptor, anyhow::Error> {
+	let cert_path = "./cert/fullchain.pem";
+	let key_path = "./cert/privkey.pem";
+
+	let file = std::fs::File::open(cert_path)?;
+	let mut reader = std::io::BufReader::new(file);
+	let cert_chain: Vec<CertificateDer<'static>> = certs(&mut reader).collect::<std::io::Result<_>>()?;
+
+	let file = std::fs::File::open(key_path)?;
+	let mut reader = std::io::BufReader::new(file);
+	let key_der: PrivateKeyDer<'static> = pkcs8_private_keys(&mut reader).next().unwrap().map(Into::into)?;
+
+	let config = rustls::ServerConfig::builder()
+		.with_no_client_auth()
+		.with_single_cert(cert_chain, key_der)?;
+
+	let acceptor = TlsAcceptor::from(Arc::new(config));
+
+	Ok(acceptor)
+}
 
 fn generate_jwt(key: &Hs256Key, user_id: String) -> Result<String, jwt_compact::CreationError> {
 	use jwt_compact::{alg::Hs256, AlgorithmExt, Claims, Header, TimeOptions};
@@ -44,7 +64,7 @@ fn get_jwt(token_string: String, verifying_key: &Hs256Key) -> Result<jwt_compact
 	Ok::<_, anyhow::Error>(token)
 }
 
-async fn handle_connection(stream: TlsStream<TcpStream>) {
+async fn handle_websocket(stream: TlsStream<TcpStream>) {
 	let ws_stream = accept_async(stream).await.expect("Error during WebSocket handshake");
 
 	println!("New WebSocket connection");
@@ -62,7 +82,7 @@ async fn handle_connection(stream: TlsStream<TcpStream>) {
 
 		match message {
 			Message::Text(text) => {
-				let client_message = match serde_json::from_str::<ClientMessage>(&text) {
+				let client_message: ClientMessage = match serde_json::from_str(&text) {
 					Ok(message) => message,
 					Err(e) => {
 						println!("Error: {e}");
@@ -99,51 +119,54 @@ async fn handle_connection(stream: TlsStream<TcpStream>) {
 	}
 }
 
-fn login(login_data: LoginData) {
-	//TODO: validate login data
+async fn handle_https(data: &str) {
+	match serde_json::from_str::<AuthData>(data).unwrap() {
+		AuthData::Login(login_data) => {
+			//TODO: validate login data
 
-	//TODO: get user_id from db
-	let user_id = "test-user-id".to_string();
+			//TODO: get user_id from db
+			let user_id = "test-user-id".to_string();
 
-	let key = Hs256Key::new(b"super_secret_key_donut_steel");
+			let key = Hs256Key::new(b"super_secret_key_donut_steel");
 
-	let token = generate_jwt(&key, user_id);
+			let token = generate_jwt(&key, user_id);
 
-	match token {
-		Ok(access_token) => {
-			let login_confirmation = LoginConfirmation { access_token };
+			match token {
+				Ok(access_token) => {
+					let login_confirmation = LoginConfirmation { access_token };
 
-			let data_string = serde_json::to_string(&login_confirmation).unwrap();
+					let data_string = serde_json::to_string(&login_confirmation).unwrap();
 
-			// send the login confirmation
+					// send the login confirmation
+				}
+				Err(e) => {
+					// send back an error
+				}
+			}
 		}
-		Err(e) => {
-			// send back an error
-		}
-	}
-}
+		AuthData::Signup(signup_data) => {
+			// validate signup data
+			println!("Received signup data: {:?}", signup_data);
 
-fn signup(signup_data: SignupData) {
-	// validate signup data
-	println!("Received signup data: {:?}", signup_data);
+			// get user_id
+			let user_id = "test-user-id".to_string();
 
-	// get user_id
-	let user_id = "test-user-id".to_string();
+			let key = Hs256Key::new(b"super_secret_key_donut_steel");
 
-	let key = Hs256Key::new(b"super_secret_key_donut_steel");
+			let token = generate_jwt(&key, user_id);
 
-	let token = generate_jwt(&key, user_id);
+			match token {
+				Ok(access_token) => {
+					let signup_confirmation = SignupConfirmation { access_token };
 
-	match token {
-		Ok(access_token) => {
-			let signup_confirmation = SignupConfirmation { access_token };
+					let data_string = serde_json::to_string(&signup_confirmation).unwrap();
 
-			let data_string = serde_json::to_string(&signup_confirmation).unwrap();
-
-			// send the signup confirmation
-		}
-		Err(e) => {
-			// send back an error
+					// send the signup confirmation
+				}
+				Err(e) => {
+					// send back an error
+				}
+			}
 		}
 	}
 }
@@ -151,31 +174,17 @@ fn signup(signup_data: SignupData) {
 #[tokio::main]
 async fn main() {
 	// used for testing
-	let address = "192.168.86.250:8080";
+	let addr = "192.168.86.250";
+	let ws_addr = format!("{}:8080", addr);
+	let http_addr = format!("{}:4040", addr);
 
-	let cert_path = "./cert/fullchain.pem";
-	let key_path = "./cert/privkey.pem";
+	let acceptor = get_acceptor().await.unwrap();
 
-	let file = std::fs::File::open(cert_path).expect("Cert file error");
-	let mut reader = std::io::BufReader::new(file);
-	let cert_chain: std::io::Result<Vec<CertificateDer<'static>>> = certs(&mut reader).collect();
-	let cert_chain = cert_chain.unwrap();
+	let listener = TcpListener::bind(ws_addr).await.expect("Failed to bind address");
 
-	let file = std::fs::File::open(key_path).expect("Key file error");
-	let mut reader = std::io::BufReader::new(file);
-	let key_der: std::io::Result<PrivateKeyDer<'static>> =
-		pkcs8_private_keys(&mut reader).next().unwrap().map(Into::into);
-	let key_der = key_der.unwrap();
-
-	let config = rustls::ServerConfig::builder()
-		.with_no_client_auth()
-		.with_single_cert(cert_chain, key_der)
-		.expect("Error creating server config");
-
-	let acceptor = TlsAcceptor::from(Arc::new(config));
-	let listener = TcpListener::bind(address).await.expect("Failed to bind address");
-
-	println!("WebSocket server running on {}", address);
+	println!("Server running on {}", addr);
+	println!("WSS on port 8080");
+	println!("HTTPS on port 4040");
 
 	while let Ok((stream, _)) = listener.accept().await {
 		let acceptor = acceptor.clone();
@@ -188,6 +197,6 @@ async fn main() {
 			}
 		};
 
-		tokio::spawn(handle_connection(tls_stream));
+		tokio::spawn(handle_websocket(tls_stream));
 	}
 }
