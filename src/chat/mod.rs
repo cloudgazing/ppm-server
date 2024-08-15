@@ -1,3 +1,7 @@
+use crate::helpers::jwt::get_jwt;
+
+use std::sync::Arc;
+
 use futures_util::StreamExt;
 use jwt_compact::alg::Hs256Key;
 use ppm_models::client::message::Message;
@@ -5,14 +9,12 @@ use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
 use tokio_tungstenite::{accept_async, tungstenite};
 
-use crate::helpers::jwt::get_jwt;
-
-pub async fn handle_websocket(stream: TlsStream<TcpStream>) {
+pub async fn handle_websocket(stream: TlsStream<TcpStream>, jwt_key: Arc<Hs256Key>) {
 	let ws_stream = accept_async(stream).await.expect("Error during WebSocket handshake");
 
 	println!("New WebSocket connection");
 
-	let (mut sender, mut receiver) = ws_stream.split();
+	let (mut _sender, mut receiver) = ws_stream.split();
 
 	while let Some(message) = receiver.next().await {
 		let message = match message {
@@ -35,8 +37,7 @@ pub async fn handle_websocket(stream: TlsStream<TcpStream>) {
 
 				match client_message {
 					Message::UserMessage(data) => {
-						let key = Hs256Key::new(b"super_secret_key_donut_steel");
-						let token = get_jwt(data.jwt, &key);
+						let token = get_jwt(data.jwt, &jwt_key);
 
 						match token {
 							Ok(token) => {

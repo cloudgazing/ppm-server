@@ -1,24 +1,20 @@
 use crate::db;
-use crate::helpers::jwt::generate_jwt;
+use crate::helpers::jwt::{generate_jwt, get_jwt};
+
+use std::sync::Arc;
 
 use actix_csrf::extractor::{Csrf, CsrfHeader};
 use actix_web::{web, Responder};
 use jwt_compact::alg::Hs256Key;
 use ppm_models::client::auth::{LoginData, SignupData};
 use ppm_models::server;
-use ppm_models::server::auth::{LoginConfirmation, SignupConfirmation};
+use ppm_models::server::auth::{BasicResponse, LoginConfirmation, SignupConfirmation};
 
-#[actix_web::get("/auth")]
 pub async fn auth() -> impl Responder {
-	println!("--auth--");
-
 	actix_web::HttpResponse::Ok().finish()
 }
 
-#[actix_web::post("/login")]
-pub async fn login(_: Csrf<CsrfHeader>, data: web::Bytes) -> web::Bytes {
-	println!("--login--");
-
+pub async fn login(_: Csrf<CsrfHeader>, data: web::Bytes, jwt_key: Arc<Hs256Key>) -> web::Bytes {
 	let data = match std::str::from_utf8(&data) {
 		Ok(s) => s,
 		Err(_) => {
@@ -52,13 +48,9 @@ pub async fn login(_: Csrf<CsrfHeader>, data: web::Bytes) -> web::Bytes {
 	match user_result {
 		db::GetUserResult::User { password, .. } => {
 			if db::hash_password(&password) == login_data.password {
-				let key = Hs256Key::new(b"super_secret_key_donut_steel");
-				let jwt = generate_jwt(&key, "temp user_id".to_string()).unwrap();
+				let jwt = generate_jwt(&jwt_key, "temp user_id".to_string()).unwrap();
 
-				LoginConfirmation::success(jwt)
-					.serialize()
-					.unwrap()
-					.into()
+				LoginConfirmation::success(jwt).serialize().unwrap().into()
 			} else {
 				LoginConfirmation::failure(server::error::LOGIN_WRONG_PASSWORD)
 					.serialize()
@@ -73,10 +65,7 @@ pub async fn login(_: Csrf<CsrfHeader>, data: web::Bytes) -> web::Bytes {
 	}
 }
 
-#[actix_web::post("/signup")]
-async fn signup(_: Csrf<CsrfHeader>, data: web::Bytes) -> web::Bytes {
-	println!("--signup--");
-
+pub async fn signup(_: Csrf<CsrfHeader>, data: web::Bytes, jwt_key: Arc<Hs256Key>) -> web::Bytes {
 	let data = match std::str::from_utf8(&data) {
 		Ok(s) => s,
 		Err(_) => {
@@ -101,8 +90,7 @@ async fn signup(_: Csrf<CsrfHeader>, data: web::Bytes) -> web::Bytes {
 		Ok(exists) => {
 			if !exists {
 				// make the new user
-				let key = Hs256Key::new(b"super_secret_key_donut_steel");
-				let jwt = generate_jwt(&key, "temp user_id".to_string()).unwrap();
+				let jwt = generate_jwt(&jwt_key, "temp user_id".to_string()).unwrap();
 
 				SignupConfirmation::success(jwt).serialize().unwrap().into()
 			} else {
@@ -116,5 +104,15 @@ async fn signup(_: Csrf<CsrfHeader>, data: web::Bytes) -> web::Bytes {
 			.serialize()
 			.unwrap()
 			.into(),
+	}
+}
+
+pub async fn validate(_: Csrf<CsrfHeader>, data: web::Bytes, jwt_key: Arc<Hs256Key>) -> web::Bytes {
+	match std::str::from_utf8(&data) {
+		Ok(token) => match get_jwt(token.to_string(), &jwt_key) {
+			Ok(_) => serde_json::to_string(&BasicResponse::Ok(true)).unwrap().into(),
+			Err(_) => serde_json::to_string(&BasicResponse::Ok(false)).unwrap().into(),
+		},
+		Err(_) => serde_json::to_string(&BasicResponse::<bool>::Err).unwrap().into(),
 	}
 }
