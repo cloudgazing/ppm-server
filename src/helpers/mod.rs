@@ -7,15 +7,15 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 
-pub fn get_tls_config() -> anyhow::Result<ServerConfig> {
-	let cert_path = "./cert/fullchain.pem";
-	let key_path = "./cert/privkey.pem";
+const CERT_PATH: &str = "./cert/fullchain.pem";
+const KEY_PATH: &str = "./cert/privkey.pem";
 
-	let file = File::open(cert_path)?;
+pub fn get_tls_config() -> anyhow::Result<ServerConfig> {
+	let file = File::open(CERT_PATH)?;
 	let mut reader = BufReader::new(file);
 	let cert_chain: Vec<CertificateDer<'static>> = certs(&mut reader).collect::<std::io::Result<_>>()?;
 
-	let file = File::open(key_path)?;
+	let file = File::open(KEY_PATH)?;
 	let mut reader = BufReader::new(file);
 	let key_der: PrivateKeyDer<'static> = pkcs8_private_keys(&mut reader).next().unwrap().map(Into::into)?;
 

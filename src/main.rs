@@ -1,6 +1,6 @@
-mod auth;
+mod api;
 mod chat;
-mod db;
+mod database;
 mod helpers;
 
 use std::sync::Arc;
@@ -46,7 +46,7 @@ async fn main() -> std::io::Result<()> {
 	let addr = address.clone();
 	let jk = jwt_key.clone();
 	let auth_server = tokio::spawn(async move {
-		let server = auth::auth_server(addr, auth_port, workers, tls_config, jk);
+		let server = api::api_server(workers, (addr, auth_port), tls_config, jk).await;
 
 		server.unwrap().await
 	});

@@ -103,3 +103,8 @@ $RECYCLE.BIN/
 
 # certificate files
 *.pem
+
+# database file
+*.db
+*.sqlite3
+*.sqlite
