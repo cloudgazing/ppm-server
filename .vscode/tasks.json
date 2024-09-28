@@ -1,0 +1,103 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build (dev)",
+			"type": "shell",
+			"command": "cargo",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"args": [
+				"b"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [],
+			"detail": "Build with current OS target in dev mode. (default)"
+		},
+		{
+			"label": "Build (release)",
+			"type": "shell",
+			"command": "cargo",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"args": [
+				"b",
+				"-r"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"detail": "Build with current OS target in release mode."
+		},
+		{
+			"label": "Build MacOS (ARM, dev)",
+			"type": "shell",
+			"command": "cargo",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"args": [
+				"b",
+				"--target",
+				"aarch64-apple-darwin"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"detail": "Build for MacOS on ARM, in dev mode."
+		},
+		{
+			"label": "Build MacOS (ARM, release)",
+			"type": "shell",
+			"command": "cargo",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"args": [
+				"b",
+				"-r",
+				"--target",
+				"aarch64-apple-darwin"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"detail": "Build for MacOS on ARM, in release mode."
+		},
+		{
+			"label": "Build Linux (x64, dev)",
+			"type": "shell",
+			"command": "cargo",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"args": [
+				"b",
+				"--target",
+				"x86_64-unknown-linux-musl"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"detail": "Build for Linux on x64, in dev mode."
+		},
+		{
+			"label": "Build Linux (x64, release)",
+			"type": "shell",
+			"command": "cargo",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"args": [
+				"b",
+				"-r",
+				"--target",
+				"x86_64-unknown-linux-musl"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"detail": "Build for Linux on x64, in release mode."
+		}
+	]
+}

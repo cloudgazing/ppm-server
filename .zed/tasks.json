@@ -1,0 +1,55 @@
+[
+	{
+		"label": "Build (dev)",
+		"command": "cargo",
+		"args": [
+			"b"
+		]
+	},
+	{
+		"label": "Build (release)",
+		"command": "cargo",
+		"args": [
+			"b",
+			"-r"
+		]
+	},
+	{
+		"label": "Build MacOS (ARM, dev)",
+		"command": "cargo",
+		"args": [
+			"b",
+			"--target",
+			"aarch64-apple-darwin"
+		]
+	},
+	{
+		"label": "Build MacOS (ARM, release)",
+		"command": "cargo",
+		"args": [
+			"b",
+			"-r",
+			"--target",
+			"aarch64-apple-darwin"
+		]
+	},
+	{
+		"label": "Build Linux (x64, dev)",
+		"command": "cargo",
+		"args": [
+			"b",
+			"--target",
+			"x86_64-unknown-linux-musl"
+		]
+	},
+	{
+		"label": "Build Linux (x64, release)",
+		"command": "cargo",
+		"args": [
+			"b",
+			"-r",
+			"--target",
+			"x86_64-unknown-linux-musl"
+		]
+	}
+]
