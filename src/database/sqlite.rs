@@ -70,7 +70,7 @@ pub async fn add_new_user(
 	.await?;
 
 	if res.rows_affected() == 0 {
-		return Err(sqlx::Error::RowNotFound);
+		Err(sqlx::Error::RowNotFound)
 	} else {
 		Ok(id.to_string())
 	}

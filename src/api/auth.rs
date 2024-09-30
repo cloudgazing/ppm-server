@@ -1,22 +1,18 @@
 use crate::database::sqlite::{add_new_user, check_credentials, check_username_availability, get_own_user_data};
-use crate::helpers::jwt::generate_jwt;
+use crate::utils::generate_jwt;
 
 use std::sync::Arc;
 
 use actix_web::http::header;
 use actix_web::web;
 use jwt_compact::alg::Hs256Key;
-use ppm_models::new::client::auth::{LoginData, SignupData};
-use ppm_models::new::server::{
-	auth::AuthResponse,
-	error::{LoginError, SignupError},
-};
+use ppm_models::client::auth::{LoginData, SignupData};
+use ppm_models::server::auth::AuthResponse;
+use ppm_models::server::error::{LoginError, SignupError};
 use sqlx::SqlitePool;
 
-const CORS_ALLOWED_ORIGIN: &str = env!("CORS_ALLOWED_ORIGIN");
-
 #[actix_web::post("/login")]
-pub async fn login(
+async fn login(
 	pool: web::Data<SqlitePool>,
 	jwt_key: web::Data<Arc<Hs256Key>>,
 	data: web::Json<LoginData>,
@@ -43,7 +39,7 @@ pub async fn login(
 }
 
 #[actix_web::post("/signup")]
-pub async fn signup(
+async fn signup(
 	pool: web::Data<SqlitePool>,
 	jwt_key: web::Data<Arc<Hs256Key>>,
 	data: web::Json<SignupData>,
@@ -67,16 +63,14 @@ pub async fn signup(
 	}
 }
 
-pub fn auth_middleware() -> actix_cors::Cors {
-	let cors = actix_cors::Cors::default()
-		.allowed_origin(CORS_ALLOWED_ORIGIN)
+pub fn middleware(cors_allowed_origin: &str) -> actix_cors::Cors {
+	actix_cors::Cors::default()
+		.allowed_origin(cors_allowed_origin)
 		.allowed_methods(["POST"])
 		.allowed_headers([
 			header::CONTENT_TYPE,
 			header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
 			header::ACCEPT,
 			header::ACCESS_CONTROL_ALLOW_ORIGIN,
-		]);
-
-	cors
+		])
 }

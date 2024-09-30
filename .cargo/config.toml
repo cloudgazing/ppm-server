@@ -1,11 +1,14 @@
 [target.x86_64-unknown-linux-musl]
 linker = "x86_64-linux-musl-gcc"
 
+[target.aarch64-unknown-linux-musl]
+linker = "aarch64-linux-musl-gcc"
+
 [alias]
 build-linux = "b --target=x86_64-unknown-linux-musl"
 build-linux-r = "b -r --target=x86_64-unknown-linux-musl"
 
 [env]
-DATABASE_URL = ""
+DATABASE_URL = "sqlite://db/server_data.sqlite3"
 CORS_ALLOWED_ORIGIN = ""
 CSRF_MIDDLEWARE_DOMAIN = ""

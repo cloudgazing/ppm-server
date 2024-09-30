@@ -1,5 +1,6 @@
 mod auth;
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use actix_web::dev::Server;
@@ -8,17 +9,17 @@ use jwt_compact::alg::Hs256Key;
 use rustls::ServerConfig;
 use sqlx::sqlite::SqlitePoolOptions;
 
-const DATABASE_URL: &str = env!("DATABASE_URL");
-
 pub async fn api_server(
-	worker_count: usize,
-	bind_addrs: (String, u16),
+	addr: SocketAddr,
 	tls_config: ServerConfig,
+	workers: usize,
 	jwt_key: Arc<Hs256Key>,
+	database_url: &'static str,
+	cors_allowed_origin: &'static str,
 ) -> std::io::Result<Server> {
 	let pool = SqlitePoolOptions::new()
 		.max_connections(10)
-		.connect(DATABASE_URL)
+		.connect(database_url)
 		.await
 		.unwrap();
 
@@ -28,13 +29,13 @@ pub async fn api_server(
 			.app_data(web::Data::new(jwt_key.clone()))
 			.service(
 				web::scope("/auth")
-					.wrap(auth::auth_middleware())
+					.wrap(auth::middleware(cors_allowed_origin))
 					.service(auth::login)
 					.service(auth::signup),
 			)
 	})
-	.workers(worker_count)
-	.bind_rustls_0_23(bind_addrs, tls_config)?
+	.workers(workers)
+	.bind_rustls_0_23(addr, tls_config)?
 	.run();
 
 	Ok(server)

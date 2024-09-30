@@ -1,49 +1,37 @@
-use crate::helpers::jwt::get_jwt;
+use crate::utils::get_jwt;
 
-use core::str;
+use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
+use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use jwt_compact::alg::Hs256Key;
-use ppm_models::old::client::message::WsMessage;
-use ppm_models::old::database::MessageBundle;
-use ppm_models::old::server::error::MessageStatusError;
-use ppm_models::old::server::message::WsServerMessage;
-use sqlx::sqlite::SqlitePoolOptions;
+use ppm_models::client::ClientSocketMessage;
+use ppm_models::server::{MessageConfirmation, ServerSocketMessage};
+use rustls::ServerConfig;
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
+use tokio::{net::TcpListener, sync::RwLock};
 use tokio_rustls::server::TlsStream;
-use tokio_tungstenite::accept_hdr_async;
+use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message as TokioMessage;
+use tokio_tungstenite::{accept_hdr_async, WebSocketStream};
 
-const DATABASE_URL: &str = env!("DATABASE_URL");
+type SocketSender = SplitSink<WebSocketStream<TlsStream<TcpStream>>, TokioMessage>;
+type OpenConnections = Arc<RwLock<HashMap<String, Arc<Mutex<SocketSender>>>>>;
+type SocketStream = WebSocketStream<TlsStream<TcpStream>>;
 
-pub async fn handle_websocket(stream: TlsStream<TcpStream>, jwt_key: Arc<Hs256Key>) {
-	let stream_ft = accept_hdr_async(stream, |req: &Request, resp: Response| {
-		let token_opt = req.uri().query().map_or(Err(()), |val| {
-			val.split('&')
-				.find(|param| param.starts_with("token="))
-				.map_or(Ok(None), |val| Ok(val.split('=').nth(1)))
-		});
+async fn handle_socket(stream: SocketStream, open_connections: OpenConnections, user_id: String) {
+	let (sender, mut receiver) = stream.split();
 
-		let token = match token_opt {
-			Ok(Some(token_str)) => token_str,
-			Ok(None) => return Err(Response::builder().status(401).body(None).unwrap()),
-			Err(_) => return Err(Response::builder().status(400).body(None).unwrap()),
-		};
+	let own_sender = Arc::new(Mutex::new(sender));
 
-		if get_jwt(token, &jwt_key).is_err() {
-			return Err(Response::builder().status(401).body(None).unwrap());
-		}
-
-		Ok(resp)
-	});
-
-	let Ok(ws_stream) = stream_ft.await else {
-		return;
-	};
-
-	let (mut sender, mut receiver) = ws_stream.split();
+	{
+		let mut connections = open_connections.write().await;
+		connections.insert(user_id.clone(), own_sender.clone());
+	}
 
 	while let Some(message) = receiver.next().await {
 		let Ok(message) = message else {
@@ -52,68 +40,106 @@ pub async fn handle_websocket(stream: TlsStream<TcpStream>, jwt_key: Arc<Hs256Ke
 
 		match message {
 			TokioMessage::Text(text) => {
-				let Ok(ws_msg) = serde_json::from_str::<WsMessage>(&text) else {
+				let Ok(ws_msg) = serde_json::from_str::<ClientSocketMessage>(&text) else {
 					continue;
 				};
 
-				match get_jwt(&ws_msg.jwt, &jwt_key) {
-					Ok(token) => {
-						let user_id = &token.claims().custom.user_id;
+				{
+					let conn_guard = open_connections.read().await;
 
-						let sender_id = user_id.clone();
-						let message_id = ws_msg.message_id;
-						let _receiver_id = ws_msg.receiver_id;
+					match conn_guard.get(&ws_msg.receiver_id) {
+						Some(sender) => {
+							let recipient_sender = sender.clone();
 
-						let message_bundle = MessageBundle::new(
-							message_id.clone(),
-							ws_msg.chat_id,
-							sender_id,
-							ws_msg.message,
-							ws_msg.timestamp,
-						);
+							drop(conn_guard);
 
-						// store it in the db
-						let pool = SqlitePoolOptions::new()
-							.max_connections(5)
-							.connect(DATABASE_URL)
-							.await
-							.unwrap();
+							let mut recipient_sender = recipient_sender.lock().await;
 
-						let bundle = message_bundle.clone().into_raw();
+							let send_res = recipient_sender.send(TokioMessage::Binary(ws_msg.contents)).await;
 
-						let add_msg: Result<(), String> = Ok(());
+							drop(recipient_sender);
 
-						match add_msg {
-							Ok(()) => {
-								let msg_update = WsServerMessage::successful_message_status(message_id);
-								let msg_update = serde_json::to_string(&msg_update).unwrap();
-								let tokio_message = TokioMessage::Text(msg_update);
+							let server_message = match send_res {
+								Ok(()) => {
+									let s = MessageConfirmation::Success;
+									let m = ServerSocketMessage::MessageConfirmation(s);
+									serde_json::to_string(&m).unwrap()
+								}
+								Err(_) => {
+									// add it to a bucket if the send fails
+									let e = MessageConfirmation::Error;
+									let m = ServerSocketMessage::MessageConfirmation(e);
+									serde_json::to_string(&m).unwrap()
+								}
+							};
 
-								_ = sender.send(tokio_message).await;
+							let mut own_sender = own_sender.lock().await;
 
-								// send the message to recipient
-								//
+							if let Err(e) = own_sender.send(TokioMessage::Text(server_message)).await {
+								eprintln!("{}", e);
 							}
-							Err(_) => {
-								let msg_update =
-									WsServerMessage::error_message_status(message_id, MessageStatusError::Internal);
-								let msg_update = serde_json::to_string(&msg_update).unwrap();
-								let tokio_message = TokioMessage::Text(msg_update);
 
-								_ = sender.send(tokio_message).await;
-							}
+							drop(own_sender);
 						}
-					}
-					Err(e) => {
-						// send something that prompts the user to back in
-						println!("Invalid token: {e}");
+						None => {
+							drop(conn_guard);
+							// add message to a bucket if the person is not online
+						}
 					}
 				}
 			}
 			TokioMessage::Close(_) => {
 				println!("Client disconnected");
 			}
-			_ => (),
+			_ => {}
+		}
+	}
+
+	{
+		let mut connections = open_connections.write().await;
+		connections.remove(&user_id);
+	}
+}
+
+pub async fn chat_server(addr: SocketAddr, tls_config: ServerConfig, jwt_key: Arc<Hs256Key>) {
+	let acceptor = Arc::new(TlsAcceptor::from(Arc::new(tls_config)));
+	let listener = TcpListener::bind(addr).await.expect("WS bind error");
+
+	let open_connections: OpenConnections = Arc::new(RwLock::new(HashMap::new()));
+
+	while let Ok((stream, _)) = listener.accept().await {
+		let acceptor = acceptor.clone();
+
+		let Ok(tls_stream) = acceptor.accept(stream).await else {
+			eprintln!("Failed to establish TLS");
+			continue;
+		};
+
+		let mut user_id: String = String::new();
+
+		let stream_ft = accept_hdr_async(tls_stream, |req: &Request, resp: Response| match req.uri().query() {
+			Some(query_str) => {
+				let params: HashMap<_, _> = url::form_urlencoded::parse(query_str.as_bytes()).into_owned().collect();
+
+				let Some(token_str) = params.get("access_token") else {
+					return Err(Response::builder().status(401).body(None).unwrap());
+				};
+
+				let Ok(token) = get_jwt(token_str, &jwt_key) else {
+					return Err(Response::builder().status(401).body(None).unwrap());
+				};
+
+				user_id = token.claims().custom.user_id.clone();
+
+				Ok(resp)
+			}
+			None => Err(Response::builder().status(401).body(None).unwrap()),
+		});
+
+		if let Ok(stream) = stream_ft.await {
+			let open_connections = open_connections.clone();
+
+			tokio::spawn(handle_socket(stream, open_connections, user_id));
 		}
 	}
 }

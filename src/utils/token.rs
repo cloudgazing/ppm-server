@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use jwt_compact::alg::{Hs256, Hs256Key};
 use jwt_compact::{AlgorithmExt, Claims, Header, TimeOptions, Token, UntrustedToken};
-use ppm_models::old::server::TokenClaims;
+use ppm_models::server::TokenClaims;
 
 pub fn generate_jwt(key: &Hs256Key, user_id: &str) -> Result<String, jwt_compact::CreationError> {
 	let user_id = user_id.to_string();
@@ -19,10 +19,10 @@ pub fn generate_jwt(key: &Hs256Key, user_id: &str) -> Result<String, jwt_compact
 	Hs256.token(&header, &claims, key)
 }
 
-pub fn get_jwt(token_string: &str, verifying_key: &Hs256Key) -> anyhow::Result<Token<TokenClaims>> {
+pub fn get_jwt(token_str: &str, verifying_key: &Hs256Key) -> anyhow::Result<Token<TokenClaims>> {
 	let time_options = TimeOptions::default();
 
-	let token = UntrustedToken::new(token_string)?;
+	let token = UntrustedToken::new(token_str)?;
 	let token: Token<TokenClaims> = Hs256.validator(verifying_key).validate(&token)?;
 
 	token
