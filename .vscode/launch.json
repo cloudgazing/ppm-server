@@ -7,7 +7,7 @@
 			"name": "Debug",
 			"program": "${workspaceFolder}/target/debug/ppm-server",
 			"args": [],
-			"cwd": "${workspaceFolder}/target/debug",
+			"cwd": "${workspaceFolder}",
 			"sourceLanguages": ["rust"]
 		}
 	]
